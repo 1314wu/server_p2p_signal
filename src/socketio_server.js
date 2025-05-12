@@ -73,19 +73,45 @@ exports.create = (config) => {
       socket.emit(
           'server-authenticated',
           {uid: cid});  // Send current client id to client.
+      console.log(' user numbers:', connectionMap.size);
       ackCallback({uid: cid});
     });
 
-    socket.on('disconnect', function() {
+    socket.on('disconnect', (reason) => {  // 注意：添加 reason 参数
       if (socket.cid) {
         const cid = socket.cid;
-        // Delete connection.
-        if (connectionMap.has(socket.cid)) {
-          delete connectionMap.delete(socket.cid);
+        
+        // 1. 清理连接映射表
+        if (connectionMap.has(cid)) {
+          connectionMap.delete(cid); // 修复原代码中的错误：delete connectionMap.delete(...)
         }
-        server.ondisconnect(socket.cid);
-        console.log(
-            cid + ' is disconnected. Online user number: ' + connectionMap.size);
+    
+        // 2. 调用断开回调
+        server.ondisconnect(cid);
+    
+        // 3. 根据原因输出日志或执行特定逻辑
+        console.log(`${cid} 断开连接。原因: ${reason} | 当前在线用户: ${connectionMap.size}`);
+    
+        // 4. 针对不同原因执行特定操作
+        switch (reason) {
+          case 'io server disconnect':
+            console.warn(`[${cid}] 被服务端主动踢出`);
+            // 示例：记录审计日志或通知管理员
+            break;
+          case 'ping timeout':
+            console.warn(`[${cid}] 心跳超时，网络可能不稳定`);
+            // 示例：尝试自动重连（需客户端逻辑）
+            break;
+          case 'transport close':
+            console.warn(`[${cid}] 网络连接突然中断`);
+            // 示例：触发网络恢复检测
+            break;
+          case 'io client disconnect':
+            console.log(`[${cid}] 客户端主动断开`);
+            break;
+          default:
+            console.warn(`[${cid}] 未知断开原因: ${reason}`);
+        }
       }
     });
 
@@ -142,6 +168,7 @@ exports.create = (config) => {
     app.get('*', function(req, res, next) {
       res.setHeader('strict-transport-security', 'max-age=31536000');
       res.send(405, 'OWT signaling server. Please connect it with Socket.IO.');
+      
     });
 
     console.info(

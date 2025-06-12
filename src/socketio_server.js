@@ -12,6 +12,10 @@ const url = require('url');
 
 const forwardEventName = 'owt-message';
 
+const roomName = 'default-room'; // 简化版本：固定房间名
+// 每个房间维护一个Set保存房间内用户的cid
+const roomMembers = new Map(); //Map<roomName, Set<cid>>
+
 const rootDir = path.dirname(__dirname);
 const httpsOptions = {
   key: fs.readFileSync(path.resolve(rootDir, 'cert/key.pem')).toString(),
@@ -58,6 +62,7 @@ exports.create = (config) => {
       connectionMap.set(cid, socket);
     }
     socket.on('authentication', (data, ackCallback) => {
+      console.log(`待认证的客户端token是: ${data.token}`)
       const result = server.onauthentication(server, data.token);
       if (result.error) {
         ackCallback({error: result.error});
@@ -66,18 +71,57 @@ exports.create = (config) => {
       }
       // Disconnect previous connection if this user already signed in.
       const cid = result.cid;
+      const room = result.room || 'default-room';
       disconnectClient(cid);
       socket.cid = cid;
+      socket.room = room;
+
       connectionMap.set(cid, socket);
+ //     const roomName = "default-room";
+      // 加入房间
+      socket.join(room);
+      //加入房间成员列表
+      if(!roomMembers.has(room)) {
+        roomMembers.set(room, new Set());
+      }
+      roomMembers.get(room).add(cid);
+      const allUsers =  Array.from(roomMembers.get(room));
+      const userList =  allUsers.filter(uid => uid !== cid);
+
       // `server-authenticated` will be removed.
       socket.emit(
           'server-authenticated',
           {uid: cid});  // Send current client id to client.
+      socket.emit("room-list",["DESKTOP-2DGLC6E", "LAPTOP-77ODV4U5","DESKTOP-2IV5GBN"])
+      console.log(cid);
+      const currentTime = new Date()
+      const time_bj = currentTime.toLocaleString('zh-CN', {
+                            timeZone: 'Asia/Shanghai',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false // 24小时制
+                      });
+      const joinMsg = {
+        type :'user-joined',
+        cid: cid,
+        users: userList,
+        timestamp: time_bj
+      }
+      socket.server.sockets.in(room).emit('room-event', joinMsg);
+//      socket.server.sockets.emit('room-event', joinMsg);
+      console.log(joinMsg);
       console.log(' user numbers:', connectionMap.size);
-      ackCallback({uid: cid});
+      console.log(`[房间:${room}] 广播 user-joined 给所有人`);
+      ackCallback({uid: cid, room: room});
     });
 
     socket.on('disconnect', (reason) => {  // 注意：添加 reason 参数
+      const cid = socket.cid;
+      const room = socket.room;
       if (socket.cid) {
         const cid = socket.cid;
         
@@ -85,7 +129,33 @@ exports.create = (config) => {
         if (connectionMap.has(cid)) {
           connectionMap.delete(cid); // 修复原代码中的错误：delete connectionMap.delete(...)
         }
-    
+        if (room && roomMembers.has(room)) {
+          const members = roomMembers.get(room);
+          members.delete(cid);
+          if (members.size == 0) {
+            roomMembers.delete(room); // 清空房间
+          }
+          const currentTime = new Date()
+          const time_bj = currentTime.toLocaleString('zh-CN', {
+                            timeZone: 'Asia/Shanghai',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: false // 24小时制
+                      });
+          // 广播有用户离开
+          socket.to(room).emit('room-event',{
+            type: 'user-left',
+            cid: cid,
+            users : Array.from(members),
+            timestamp: time_bj
+          });
+          console.log(`[房间:${room}] 用户离开: ${cid}，剩余成员: ${members.size}`);
+        }
+
         // 2. 调用断开回调
         server.ondisconnect(cid);
     
@@ -117,7 +187,7 @@ exports.create = (config) => {
 
     socket.on(forwardEventName, (data, ackCallback) => {
       if (!socket.cid) {
-        console.log('Received a message from unauthenticated client.');
+        console.log('Received a message from unauthenticated client.',socket.cid);
         ackCallback(2120);
         socket.disconnect();
         return;

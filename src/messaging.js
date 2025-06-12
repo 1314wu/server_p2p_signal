@@ -14,6 +14,7 @@
 
 const { v4 : uuid } = require('uuid');
 const config = require('./config');
+const jwt = require('jsonwebtoken');
 const socketioServer =
     require('./socketio_server')
         .create(config.transportServers.find(e => e.name == 'socketio').config);
@@ -24,14 +25,23 @@ const sessionMap = new Map();
 // Please modify this function if you need to add your own credential validation
 // procedure.
 function authenticate(server, token) {
-  const cid = token ? token : uuid().replace(/-/g, '') + '@anonymous';
+  // 解码token，获取用户信息
+ 
+  
+  const decoded = jwt.verify(token, "my-very-secret-key");
+  const cid = decoded.uid || decoded.id || decoded.sub;
+  const room = decoded.room || 'default-room';
+  console.log(`房间[${room}]里 ${cid}上线了`);
+
+//  return {cid, room};
+//  const cid = token ? token : uuid().replace(/-/g, '') + '@anonymous';
   if (sessionMap.has(cid)) {
     console.log('Force disconnected ' + cid);
     sessionMap.get(cid).disconnect();
   }
   sessionMap.set(cid, server);
   console.log(cid + ' is connected.');
-  return {cid: cid, error: null};
+  return {cid: cid, room: 'jcdl', error: null};
 }
 
 async function onMessage(to, message) {

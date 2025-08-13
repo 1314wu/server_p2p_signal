@@ -92,7 +92,7 @@ exports.create = (config) => {
       socket.emit(
           'server-authenticated',
           {uid: cid});  // Send current client id to client.
-      socket.emit("room-list",["DESKTOP-2DGLC6E", "LAPTOP-77ODV4U5","DESKTOP-2IV5GBN"])
+      socket.server.sockets.in(room).emit("room-list",allUsers);
       console.log(cid);
       const currentTime = new Date()
       const time_bj = currentTime.toLocaleString('zh-CN', {

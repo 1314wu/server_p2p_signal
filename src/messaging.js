@@ -41,7 +41,7 @@ function authenticate(server, token) {
   }
   sessionMap.set(cid, server);
   console.log(cid + ' is connected.');
-  return {cid: cid, room: 'jcdl', error: null};
+  return {cid: cid, room: room, error: null};
 }
 
 async function onMessage(to, message) {
